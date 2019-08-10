@@ -17,13 +17,16 @@ class CoreDataImporter {
     func sync(entries: [EntryRepresentation], completion: @escaping (Error?) -> Void = { _ in }) {
         
         self.context.perform {
+            let identifiers = entries.compactMap { $0.identifier }
+            let existingEntries = self.fetchMultipleEntriesFromPersistentStore(with: identifiers, in: self.context)
+            
             for entryRep in entries {
                 guard let identifier = entryRep.identifier else { continue }
                 
-                let entry = self.fetchSingleEntryFromPersistentStore(with: identifier, in: self.context)
-                if let entry = entry, entry != entryRep {
-                    self.update(entry: entry, with: entryRep)
-                } else if entry == nil {
+                //let entry = self.fetchSingleEntryFromPersistentStore(with: identifier, in: self.context)
+                if let existingEntry = existingEntries[identifier] {
+                    self.update(entry: existingEntry, with: entryRep)
+                } else {
                     _ = Entry(entryRepresentation: entryRep, context: self.context)
                 }
             }
@@ -49,6 +52,23 @@ class CoreDataImporter {
         var result: Entry? = nil
         do {
             result = try context.fetch(fetchRequest).first
+        } catch {
+            NSLog("Error fetching single entry: \(error)")
+        }
+        return result
+    }
+    
+    private func fetchMultipleEntriesFromPersistentStore(with identifiers: [String], in context: NSManagedObjectContext) -> [String : Entry] {
+        
+        let fetchRequest: NSFetchRequest<Entry> = Entry.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "identifier IN %@", identifiers)
+        var result = [String : Entry]()
+        
+        do {
+            result = try context.fetch(fetchRequest).reduce(into: [String : Entry]()) {
+                guard let id = $1.identifier else { return }
+                $0[id] = $1
+            }
         } catch {
             NSLog("Error fetching single entry: \(error)")
         }
